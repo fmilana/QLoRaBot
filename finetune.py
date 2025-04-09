@@ -2,6 +2,7 @@ import torch
 import json
 import os
 import gc
+import argparse  # Import argparse for command-line arguments
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -78,7 +79,7 @@ def load_raw_dataset(file_path, tokenizer, max_length=MAX_LENGTH):
     return filtered_dataset
 
 
-def train_with_qlora(train_dataset, val_dataset, model_name, output_dir, epochs=2, batch_size=2):
+def train_with_qlora(train_dataset, val_dataset, model_name, output_dir, epochs=2, batch_size=1):
     """
     Fine-tune a model using QLoRA with memory optimizations.
     """
@@ -214,13 +215,32 @@ def train_with_qlora(train_dataset, val_dataset, model_name, output_dir, epochs=
 
 
 if __name__ == "__main__":
+    # Set up argument parser
+    parser = argparse.ArgumentParser(description='Fine-tune a language model with QLoRA')
+    parser.add_argument('--model-name', type=str, default="meta-llama/Meta-Llama-3-8B", 
+                        help='Base model to use (default: meta-llama/Meta-Llama-3-8B)')
+    parser.add_argument('--output-name', type=str, required=True, 
+                        help='Custom name for the output model directory')
+    parser.add_argument('--user', type=str, default=None,
+                        help='User name to load specific train/val files (e.g., "paolo_v1")')
+    parser.add_argument('--epochs', type=int, default=2,
+                        help='Number of training epochs (default: 2)')
+    parser.add_argument('--batch-size', type=int, default=1,
+                        help='Batch size for training (default: 1)')
+    
+    # Parse arguments
+    args = parser.parse_args()
+    
     # Free up CUDA memory
     torch.cuda.empty_cache()
     gc.collect()
     
-    # Define model name
-    model_name = "meta-llama/Meta-Llama-3-8B"
-    output_dir = "model/fine-tuned/qlora_model"
+    # Define model name and output directory with custom name
+    model_name = args.model_name
+    output_dir = f"model/fine-tuned/{args.output_name}"
+    
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
     
     # Load tokenizer first for length filtering
     print(f"Loading tokenizer from {model_name}")
@@ -231,9 +251,13 @@ if __name__ == "__main__":
     speaker_tokens = ['[Federico]:', '[Paolo]:', '[Riccardo Santini]:', '[Guglielmone]:']
     tokenizer.add_special_tokens({'additional_special_tokens': speaker_tokens})
     
-    # Load pre-split datasets with length filtering
-    train_dataset_path = "data/processed/train_conversations.json"
-    val_dataset_path = "data/processed/val_conversations.json"
+    # Determine file paths based on user parameter
+    if args.user:
+        train_dataset_path = f"data/processed/train_conversations_{args.user}.json"
+        val_dataset_path = f"data/processed/val_conversations_{args.user}.json"
+    else:
+        train_dataset_path = "data/processed/train_conversations.json"
+        val_dataset_path = "data/processed/val_conversations.json"
     
     print(f"Loading training dataset from {train_dataset_path}")
     train_dataset = load_raw_dataset(train_dataset_path, tokenizer, MAX_LENGTH)
@@ -250,7 +274,8 @@ if __name__ == "__main__":
         val_dataset, 
         model_name, 
         output_dir, 
-        batch_size=2
+        epochs=args.epochs,
+        batch_size=args.batch_size
     )
 
     print(f"Model fine-tuning complete. Model saved to {output_dir}")

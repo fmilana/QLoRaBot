@@ -1,8 +1,9 @@
 import os
 import re
 import json
-import random  # Import the random module
+import random
 import pandas as pd
+import argparse  # Import argparse for command-line arguments
 from datasets import Dataset
 
 
@@ -55,11 +56,13 @@ def parse_whatsapp_chat(file_path):
     return messages
 
 
-# parse file and dump to json
 def dump_messages_to_json(messages, output_path):
     '''
     Dumps the parsed messages to a JSON file.
     '''
+    # Create directory if it doesn't exist
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    
     with open(output_path, 'w', encoding='utf-8') as json_file:
         json.dump(messages, json_file, ensure_ascii=False, indent=4)
 
@@ -107,8 +110,10 @@ def prepare_training_data(messages, chosen_user, context_size=5):
 def dump_conversations_to_json(conversations, output_path, randomize=True):
     '''
     Dumps the formatted conversations to a JSON file.
-    Option to randomize the order of conversations.
     '''
+    # Create directory if it doesn't exist
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    
     # Randomize the order of conversations if specified
     if randomize:
         random.shuffle(conversations)
@@ -149,42 +154,62 @@ def split_train_val(conversations, train_ratio=0.9, randomize=True):
 
 # Main function to run the script
 if __name__ == '__main__':
-    # Set a random seed for reproducibility (optional)
+    # Set up argument parser
+    parser = argparse.ArgumentParser(description='Process WhatsApp chat data with custom naming')
+    parser.add_argument('--user', type=str, default='Paolo', help='User to use for training data (default: Paolo)')
+    parser.add_argument('--train-ratio', type=float, default=0.9, help='Ratio of training data (default: 0.9)')
+    
+    # Parse arguments
+    args = parser.parse_args()
+    chosen_user = args.user
+    custom_name = chosen_user.replace(' ', '_').lower()
+    train_ratio = args.train_ratio
+    
+    # Set a random seed for reproducibility
     random.seed(42)
-    
-    all_messages = []
-    # Get all files in the data/raw directory
-    raw_files_dir = 'data/raw'
-    files = os.listdir(raw_files_dir)
-    
-    # Process each file
-    for file in files:
-        # Create the full file path
-        file_path = os.path.join(raw_files_dir, file)
+
+    # Check if chat has already been parsed
+    if not os.path.exists('data/processed/parsed_chat.json'):
+        # Create output directory structure
+        os.makedirs('data/processed', exist_ok=True)
         
-        # Check if it's a file (not a directory)
-        if os.path.isfile(file_path):
-            # Parse the WhatsApp chat and append the messages to the list
-            file_messages = parse_whatsapp_chat(file_path)
-            all_messages.extend(file_messages)
-            print(f'Parsed {len(file_messages)} messages from {file}')
+        all_messages = []
+        # Get all files in the data/raw directory
+        raw_files_dir = 'data/raw'
+        files = os.listdir(raw_files_dir)
+        
+        # Process each file
+        for file in files:
+            # Create the full file path
+            file_path = os.path.join(raw_files_dir, file)
+            
+            # Check if it's a file (not a directory)
+            if os.path.isfile(file_path):
+                # Parse the WhatsApp chat and append the messages to the list
+                file_messages = parse_whatsapp_chat(file_path)
+                all_messages.extend(file_messages)
+                print(f'Parsed {len(file_messages)} messages from {file}')
+        
+        # Save all combined messages to JSON with custom name
+        parsed_chat_path = f'data/processed/parsed_chat.json'
+        dump_messages_to_json(all_messages, parsed_chat_path)
+        print(f'Parsed {len(all_messages)} total messages and saved to {parsed_chat_path}')
+    else:
+        # Load already parsed messages
+        with open('data/processed/parsed_chat.json', 'r', encoding='utf-8') as json_file:
+            all_messages = json.load(json_file)
     
-    # Save all combined messages to JSON
-    dump_messages_to_json(all_messages, 'data/processed/parsed_chat.json')
-    print(f'Parsed {len(all_messages)} total messages and saved to processed/parsed_chat.json')
-    
-    chosen_user = 'Paolo'
     conversations = prepare_training_data(all_messages, chosen_user)
     
-    # Option 1: Just randomize all conversations and save to one file
-    dump_conversations_to_json(conversations, 'data/processed/conversations_randomized.json', randomize=True)
-    print(f'Prepared and randomized {len(conversations)} conversation pairs for {chosen_user} and saved to processed/conversations_randomized.json')
+    # Split into train/validation sets
+    train_conversations, val_conversations = split_train_val(conversations, train_ratio=train_ratio, randomize=True)
     
-    # Option 2: Split into train/validation sets
-    train_conversations, val_conversations = split_train_val(conversations, train_ratio=0.9, randomize=True)
+    # Save train and validation sets with custom name
+    train_path = f'data/processed/train_conversations_{custom_name}.json'
+    val_path = f'data/processed/val_conversations_{custom_name}.json'
     
-    # Save train and validation sets
-    dump_conversations_to_json(train_conversations, 'data/processed/train_conversations.json', randomize=False)
-    dump_conversations_to_json(val_conversations, 'data/processed/val_conversations.json', randomize=False)
+    dump_conversations_to_json(train_conversations, train_path, randomize=False)
+    dump_conversations_to_json(val_conversations, val_path, randomize=False)
     
     print(f'Split data into {len(train_conversations)} training samples and {len(val_conversations)} validation samples')
+    print(f'Files saved with "{custom_name}" appended to filenames')

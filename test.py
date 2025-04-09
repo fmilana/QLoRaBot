@@ -67,8 +67,8 @@ def load_fine_tuned_model(model_path, base_model_name):
 
 def generate_response(model, tokenizer, prompt, max_length=100, temperature=0.7, top_p=0.9, repetition_penalty=1.2):
     # Ensure the prompt ends with the speaker tag
-    if not prompt.strip().endswith("[Paolo]:"):
-        prompt = prompt.strip() + "\n[Paolo]:"
+    if not prompt.strip().endswith("[RESPONSE]:"):
+        prompt = prompt.strip() + "\n[RESPONSE]:"
     
     # Create input tokens with attention mask
     inputs = tokenizer(
@@ -161,8 +161,8 @@ def interactive_mode(model, tokenizer):
             conversation = user_input
         
         # Ensure it ends with the speaker tag
-        if not conversation.strip().endswith("[Paolo]:"):
-            conversation = conversation.strip() + "\n[Paolo]:"
+        if not conversation.strip().endswith("[RESPONSE]:"):
+            conversation = conversation.strip() + "\n[RESPONSE]:"
         
         print("\nFormatted prompt:")
         print(conversation)
@@ -174,7 +174,7 @@ def interactive_mode(model, tokenizer):
             conversation
         )
         
-        print(f"\nPaolo's response: {completion}")
+        print(f"\n[RESPONSE]: {completion}")
 
 
 if __name__ == "__main__":
@@ -204,12 +204,12 @@ if __name__ == "__main__":
         print(f"\nPrompt: {args.prompt}")
         
         # Format the prompt if it doesn't already have the expected format
-        if not args.prompt.strip().endswith("[Paolo]:"):
+        if not args.prompt.strip().endswith("[RESPONSE]:"):
             if "|" in args.prompt:
                 messages = parse_conversation_input(args.prompt)
-                formatted_prompt = format_conversation(messages) + "\n[Paolo]:"
+                formatted_prompt = format_conversation(messages) + "\n[RESPONSE]:"
             else:
-                formatted_prompt = args.prompt.strip() + "\n[Paolo]:"
+                formatted_prompt = args.prompt.strip() + "\n[RESPONSE]:"
             print(f"\nFormatted prompt: {formatted_prompt}")
         else:
             formatted_prompt = args.prompt
@@ -223,7 +223,7 @@ if __name__ == "__main__":
             top_p=args.top_p,
             repetition_penalty=args.repetition_penalty
         )
-        print(f"\nPaolo's response: {completion}")
+        print(f"[RESPONSE]: {completion}")
     else:
         # Interactive mode
         interactive_mode(model, tokenizer)
