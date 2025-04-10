@@ -110,9 +110,13 @@ def format_conversation(messages):
     Returns:
         Formatted conversation string
     """
-    conversation = ""
+    # Add the instruction at the start
+    conversation = "Below is a WhatsApp group conversation. Generate a response:\n\n"
+    
+    # Then add the messages
     for message in messages:
         conversation += f"[{message['speaker']}]: {message['message']}\n"
+    
     return conversation.strip()
 
 
@@ -157,8 +161,8 @@ def interactive_mode(model, tokenizer):
             messages = parse_conversation_input(user_input)
             conversation = format_conversation(messages)
         else:
-            # If simple format not detected, use as-is (for advanced users)
-            conversation = user_input
+            # If simple format not detected, add instruction manually
+            conversation = "Below is a WhatsApp group conversation. Generate a response:\n\n" + user_input
         
         # Ensure it ends with the speaker tag
         if not conversation.strip().endswith("[RESPONSE]:"):
@@ -209,10 +213,18 @@ if __name__ == "__main__":
                 messages = parse_conversation_input(args.prompt)
                 formatted_prompt = format_conversation(messages) + "\n[RESPONSE]:"
             else:
-                formatted_prompt = args.prompt.strip() + "\n[RESPONSE]:"
+                # Add the instruction if it doesn't already have it
+                if not args.prompt.startswith("Below is a WhatsApp group conversation"):
+                    formatted_prompt = "Below is a WhatsApp group conversation. Generate a response:\n\n" + args.prompt.strip() + "\n[RESPONSE]:"
+                else:
+                    formatted_prompt = args.prompt.strip() + "\n[RESPONSE]:"
             print(f"\nFormatted prompt: {formatted_prompt}")
         else:
-            formatted_prompt = args.prompt
+            # If it already ends with [RESPONSE]:, check if it has the instruction
+            if not args.prompt.startswith("Below is a WhatsApp group conversation"):
+                formatted_prompt = "Below is a WhatsApp group conversation. Generate a response:\n\n" + args.prompt
+            else:
+                formatted_prompt = args.prompt
         
         completion = generate_response(
             model, 

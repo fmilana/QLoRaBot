@@ -67,7 +67,7 @@ def dump_messages_to_json(messages, output_path):
         json.dump(messages, json_file, ensure_ascii=False, indent=4)
 
 
-def prepare_training_data(messages, chosen_user, context_size=5):
+def prepare_training_data(messages, chosen_user, context_size):
     '''
     Format WhatsApp messages into structured conversation pairs suitable for fine-tuning.
     '''
@@ -157,12 +157,14 @@ if __name__ == '__main__':
     # Set up argument parser
     parser = argparse.ArgumentParser(description='Process WhatsApp chat data with custom naming')
     parser.add_argument('--user', type=str, default='Paolo', help='User to use for training data (default: Paolo)')
+    parser.add_argument('--context-size', type=int, default=5, help='Number of context messages to include (default: 5)')
     parser.add_argument('--train-ratio', type=float, default=0.9, help='Ratio of training data (default: 0.9)')
     
     # Parse arguments
     args = parser.parse_args()
     chosen_user = args.user
     custom_name = chosen_user.replace(' ', '_').lower()
+    context_size = args.context_size
     train_ratio = args.train_ratio
     
     # Set a random seed for reproducibility
@@ -199,7 +201,7 @@ if __name__ == '__main__':
         with open('data/processed/parsed_chat.json', 'r', encoding='utf-8') as json_file:
             all_messages = json.load(json_file)
     
-    conversations = prepare_training_data(all_messages, chosen_user)
+    conversations = prepare_training_data(all_messages, chosen_user, context_size=context_size)
     
     # Split into train/validation sets
     train_conversations, val_conversations = split_train_val(conversations, train_ratio=train_ratio, randomize=True)

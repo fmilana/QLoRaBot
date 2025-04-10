@@ -29,13 +29,19 @@ MAX_LENGTH = 2048
 
 def format_prompts_func(example_or_batch):
     def format_single(example):
-        conversation = ""
+        # Start with the requested instruction
+        conversation = "Below is a WhatsApp group conversation. Generate a response:\n\n"
+        
+        # Add the conversation history (unchanged)
         for entry in example["context"]:
             conversation += f"[{entry['speaker']}]: {entry['message']}\n"
+        
+        # Add the response marker and target (unchanged)
         conversation += f"[RESPONSE]: {example['target_response']}"
+        
         return conversation
-
-    # Detect batch
+    
+    # Detect batch (unchanged)
     if isinstance(example_or_batch["context"][0], dict):
         # Single example
         return [format_single(example_or_batch)]
@@ -45,17 +51,53 @@ def format_prompts_func(example_or_batch):
                 for ctx, resp in zip(example_or_batch["context"], example_or_batch["target_response"])]
 
 
-def filter_by_length(examples, tokenizer, max_length=MAX_LENGTH):
+def filter_by_length(examples, tokenizer, min_words, max_length=MAX_LENGTH):
     """
-    Filter examples that would exceed the maximum length when tokenized.
+    Filter examples.
     Returns a boolean mask of which examples to keep.
     """
-    formatted_examples = format_prompts_func(examples)
-    tokenized_lengths = [len(tokenizer.encode(example)) for example in formatted_examples]
-    return [length <= max_length for length in tokenized_lengths]
+    # When using dataset.filter() with batched=True, examples will be a dictionary
+    # with keys corresponding to dataset column names, and values being lists
+    
+    # Create the mask for minimum word count
+    word_count_mask = [len(response.split()) >= min_words for response in examples["target_response"]]
+    
+    # Create a list to store our final mask
+    final_mask = [False] * len(examples["target_response"])
+    
+    # Only process examples that meet the minimum word count
+    for i, keep in enumerate(word_count_mask):
+        if keep:
+            # Create a single example dictionary with the data for this index
+            example_dict = {k: examples[k][i] for k in examples}
+            
+            # Format this individual example
+            formatted_example = format_prompts_func(example_dict)
+            
+            # Check token length
+            try:
+                # Make sure formatted_example is a proper string
+                if isinstance(formatted_example, list):
+                    # If format_prompts_func returns a list of formatted examples, take the first one
+                    formatted_text = formatted_example[0]
+                else:
+                    formatted_text = formatted_example
+                
+                token_length = len(tokenizer.encode(formatted_text))
+                final_mask[i] = token_length <= max_length
+            except Exception as e:
+                print(f"Error encoding example {i}: {e}")
+                # Keep track of the problematic example for debugging
+                if i < 3:  # Only print the first few problematic examples to avoid flooding output
+                    print(f"Problematic example: {example_dict}")
+                    print(f"Formatted text type: {type(formatted_text)}")
+                    print(f"Formatted text preview: {formatted_text[:100] if isinstance(formatted_text, str) else formatted_text}")
+                final_mask[i] = False
+    
+    return final_mask
 
 
-def load_raw_dataset(file_path, tokenizer, max_length=MAX_LENGTH):
+def load_raw_dataset(file_path, tokenizer, min_words, max_length=MAX_LENGTH):
     """
     Load raw dataset from JSON file and filter by tokenized length.
     """
@@ -66,9 +108,9 @@ def load_raw_dataset(file_path, tokenizer, max_length=MAX_LENGTH):
     temp_dataset = Dataset.from_list(raw_data)
     
     # Apply length filtering
-    print(f"Filtering examples longer than {max_length} tokens...")
+    print(f"Filtering out examples with response shorter than {min_words} words and overall longer than {max_length} tokens...")
     filtered_dataset = temp_dataset.filter(
-        lambda examples: filter_by_length(examples, tokenizer, max_length),
+        lambda examples: filter_by_length(examples, tokenizer, min_words, max_length),
         batched=True,
         batch_size=100  # Process in batches for efficiency
     )
@@ -223,6 +265,8 @@ if __name__ == "__main__":
                         help='Custom name for the output model directory')
     parser.add_argument('--user', type=str, default=None,
                         help='User name to load specific train/val files (e.g., "paolo_v1")')
+    parser.add_argument('--min-msg-length', type=int, default=0,
+                        help='Minimum number of words in messages (default: 0)')
     parser.add_argument('--epochs', type=int, default=2,
                         help='Number of training epochs (default: 2)')
     parser.add_argument('--batch-size', type=int, default=1,
@@ -260,10 +304,10 @@ if __name__ == "__main__":
         val_dataset_path = "data/processed/val_conversations.json"
     
     print(f"Loading training dataset from {train_dataset_path}")
-    train_dataset = load_raw_dataset(train_dataset_path, tokenizer, MAX_LENGTH)
+    train_dataset = load_raw_dataset(train_dataset_path, tokenizer, args.min_msg_length, MAX_LENGTH)
     
     print(f"Loading validation dataset from {val_dataset_path}")
-    val_dataset = load_raw_dataset(val_dataset_path, tokenizer, MAX_LENGTH)
+    val_dataset = load_raw_dataset(val_dataset_path, tokenizer, args.min_msg_length, MAX_LENGTH)
     
     print(f"Training dataset size: {len(train_dataset)}")
     print(f"Validation dataset size: {len(val_dataset)}")
