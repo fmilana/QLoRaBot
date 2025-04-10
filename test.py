@@ -12,16 +12,6 @@ from peft import PeftModel
 chosen_user = None
 
 def load_fine_tuned_model(model_path, base_model_name):
-    """
-    Load a fine-tuned model for inference with memory optimizations.
-    
-    Args:
-        model_path: Path to the fine-tuned LoRA adapter
-        base_model_name: Name of the base model
-    
-    Returns:
-        model, tokenizer: The loaded model and tokenizer
-    """
     # Free up CUDA memory before starting
     torch.cuda.empty_cache()
     gc.collect()
@@ -98,13 +88,6 @@ def generate_response(model, tokenizer, prompt, max_length=100, temperature=0.7,
 
 
 def parse_conversation_input(user_input):
-    """
-    Parse user input in a simple format to create a conversation.
-    Format: "Speaker1: Message1 | Speaker2: Message2 | ..."
-    
-    Returns:
-        List of message dictionaries
-    """
     messages = []
     parts = user_input.split("|")
     
@@ -121,17 +104,8 @@ def parse_conversation_input(user_input):
 
 
 def format_conversation(messages):
-    """
-    Format a list of messages into the conversation format expected by the model.
-    
-    Args:
-        messages: List of dictionaries with 'speaker' and 'message' keys
-    
-    Returns:
-        Formatted conversation string
-    """
     # Add the instruction at the start
-    conversation = f"<|system|>\nYou are {chosen_user} in a WhatsApp group chat. Respond naturally in {chosen_user}'s style to the conversation below.</|system|>\n\n"
+    conversation = f"<|system|>\nYou are {chosen_user} in a WhatsApp group chat with his friends that switch between English and Italian. Respond naturally in {chosen_user}'s style to the conversation below. The message should take the context into account so that it is coherent and flows naturally with the conversation. When {chosen_user} is mentioned in any of the messages in the conversation, you should pay more attention to that message when replying.</|system|>\n\n"
     
     # Then add the messages
     for message in messages:
@@ -144,9 +118,6 @@ def format_conversation(messages):
 
 
 def interactive_mode(model, tokenizer):
-    """
-    Run an interactive session with the model.
-    """
     print("\n===== Interactive Mode =====")
     print("Type 'exit' to quit")
     print("Format your input as: 'Guglielmone: Message1 | Paolo: Message2 | ...'")
@@ -176,7 +147,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test a fine-tuned model")
     parser.add_argument('--user', type=str, default=None,
                         help='User name to be used in the prompt.')
-    parser.add_argument("--model_path", type=str, default="model/fine-tuned/qlora_model", 
+    parser.add_argument("--model_path", type=str, default="model/fine-tuned/", 
                         help="Path to the fine-tuned model")
     parser.add_argument("--base_model", type=str, default="meta-llama/Meta-Llama-3-8B", 
                         help="Name of the base model")
