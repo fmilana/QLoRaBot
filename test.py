@@ -9,6 +9,7 @@ from transformers import (
 )
 from peft import PeftModel
 
+chosen_user = None
 
 def load_fine_tuned_model(model_path, base_model_name):
     """
@@ -48,7 +49,7 @@ def load_fine_tuned_model(model_path, base_model_name):
     tokenizer.pad_token = tokenizer.eos_token
 
     # Add the same special tokens that were used during training
-    speaker_tokens = ['[Federico]:', '[Paolo]:', '[Riccardo Santini]:', '[Guglielmone]:']
+    speaker_tokens = ['[Federico]:', '[Paolo]:', '[Riccardo Santini]:', '[Guglielmone]:', '<|system|>', '</|system|>']
     tokenizer.add_special_tokens({'additional_special_tokens': speaker_tokens})
 
     # Resize model embeddings to match tokenizer size
@@ -66,10 +67,6 @@ def load_fine_tuned_model(model_path, base_model_name):
 
 
 def generate_response(model, tokenizer, prompt, max_length=100, temperature=0.7, top_p=0.9, repetition_penalty=1.2):
-    # Ensure the prompt ends with the speaker tag
-    if not prompt.strip().endswith("[RESPONSE]:"):
-        prompt = prompt.strip() + "\n[RESPONSE]:"
-    
     # Create input tokens with attention mask
     inputs = tokenizer(
         prompt, 
@@ -100,26 +97,6 @@ def generate_response(model, tokenizer, prompt, max_length=100, temperature=0.7,
     return generated_text.strip()
 
 
-def format_conversation(messages):
-    """
-    Format a list of messages into the conversation format expected by the model.
-    
-    Args:
-        messages: List of dictionaries with 'speaker' and 'message' keys
-    
-    Returns:
-        Formatted conversation string
-    """
-    # Add the instruction at the start
-    conversation = "Below is a WhatsApp group conversation. Generate a response:\n\n"
-    
-    # Then add the messages
-    for message in messages:
-        conversation += f"[{message['speaker']}]: {message['message']}\n"
-    
-    return conversation.strip()
-
-
 def parse_conversation_input(user_input):
     """
     Parse user input in a simple format to create a conversation.
@@ -143,6 +120,29 @@ def parse_conversation_input(user_input):
     return messages
 
 
+def format_conversation(messages):
+    """
+    Format a list of messages into the conversation format expected by the model.
+    
+    Args:
+        messages: List of dictionaries with 'speaker' and 'message' keys
+    
+    Returns:
+        Formatted conversation string
+    """
+    # Add the instruction at the start
+    conversation = f"<|system|>\nYou are {chosen_user} in a WhatsApp group chat. Respond naturally in {chosen_user}'s style to the conversation below.</|system|>\n\n"
+    
+    # Then add the messages
+    for message in messages:
+        conversation += f"[{message['speaker']}]: {message['message']}\n"
+    
+    # Add the response marker
+    conversation += f"[RESPONSE]:"
+    
+    return conversation.strip()
+
+
 def interactive_mode(model, tokenizer):
     """
     Run an interactive session with the model.
@@ -156,17 +156,8 @@ def interactive_mode(model, tokenizer):
         if user_input.lower() == 'exit':
             break
         
-        # Check if user input is in the expected format
-        if "|" in user_input:
-            messages = parse_conversation_input(user_input)
-            conversation = format_conversation(messages)
-        else:
-            # If simple format not detected, add instruction manually
-            conversation = "Below is a WhatsApp group conversation. Generate a response:\n\n" + user_input
-        
-        # Ensure it ends with the speaker tag
-        if not conversation.strip().endswith("[RESPONSE]:"):
-            conversation = conversation.strip() + "\n[RESPONSE]:"
+        messages = parse_conversation_input(user_input)
+        conversation = format_conversation(messages)
         
         print("\nFormatted prompt:")
         print(conversation)
@@ -178,11 +169,13 @@ def interactive_mode(model, tokenizer):
             conversation
         )
         
-        print(f"\n[RESPONSE]: {completion}")
+        print(f"\n[{chosen_user}]: {completion}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test a fine-tuned model")
+    parser.add_argument('--user', type=str, default=None,
+                        help='User name to be used in the prompt.')
     parser.add_argument("--model_path", type=str, default="model/fine-tuned/qlora_model", 
                         help="Path to the fine-tuned model")
     parser.add_argument("--base_model", type=str, default="meta-llama/Meta-Llama-3-8B", 
@@ -199,6 +192,8 @@ if __name__ == "__main__":
                         help="Repetition penalty")
     
     args = parser.parse_args()
+
+    chosen_user = args.user if args.user else "Paolo"
     
     # Load the model
     model, tokenizer = load_fine_tuned_model(args.model_path, args.base_model)
@@ -206,25 +201,11 @@ if __name__ == "__main__":
     if args.prompt:
         # Single prompt mode
         print(f"\nPrompt: {args.prompt}")
-        
-        # Format the prompt if it doesn't already have the expected format
-        if not args.prompt.strip().endswith("[RESPONSE]:"):
-            if "|" in args.prompt:
-                messages = parse_conversation_input(args.prompt)
-                formatted_prompt = format_conversation(messages) + "\n[RESPONSE]:"
-            else:
-                # Add the instruction if it doesn't already have it
-                if not args.prompt.startswith("Below is a WhatsApp group conversation"):
-                    formatted_prompt = "Below is a WhatsApp group conversation. Generate a response:\n\n" + args.prompt.strip() + "\n[RESPONSE]:"
-                else:
-                    formatted_prompt = args.prompt.strip() + "\n[RESPONSE]:"
-            print(f"\nFormatted prompt: {formatted_prompt}")
-        else:
-            # If it already ends with [RESPONSE]:, check if it has the instruction
-            if not args.prompt.startswith("Below is a WhatsApp group conversation"):
-                formatted_prompt = "Below is a WhatsApp group conversation. Generate a response:\n\n" + args.prompt
-            else:
-                formatted_prompt = args.prompt
+
+        messages = parse_conversation_input(args.prompt)
+        formatted_prompt = format_conversation(messages)
+
+        print(f"\nFormatted prompt: {formatted_prompt}")
         
         completion = generate_response(
             model, 
@@ -235,7 +216,7 @@ if __name__ == "__main__":
             top_p=args.top_p,
             repetition_penalty=args.repetition_penalty
         )
-        print(f"[RESPONSE]: {completion}")
+        print(f"[{chosen_user}]: {completion}")
     else:
         # Interactive mode
         interactive_mode(model, tokenizer)

@@ -26,21 +26,23 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 # Set max sequence length
 MAX_LENGTH = 2048
 
+chosen_user = None 
+
 
 def format_prompts_func(example_or_batch):
     def format_single(example):
         # Start with the requested instruction
-        conversation = "Below is a WhatsApp group conversation. Generate a response:\n\n"
-        
+        conversation = f"<|system|>\nYou are {chosen_user} in a WhatsApp group chat. Respond naturally in {chosen_user}'s style to the conversation below.</|system|>\n\n"
+
         # Add the conversation history (unchanged)
         for entry in example["context"]:
             conversation += f"[{entry['speaker']}]: {entry['message']}\n"
-        
+
         # Add the response marker and target (unchanged)
         conversation += f"[RESPONSE]: {example['target_response']}"
-        
+
         return conversation
-    
+
     # Detect batch (unchanged)
     if isinstance(example_or_batch["context"][0], dict):
         # Single example
@@ -152,8 +154,8 @@ def train_with_qlora(train_dataset, val_dataset, model_name, output_dir, epochs=
     tokenizer.pad_token = tokenizer.eos_token
 
     # Add speaker tags as special tokens
-    speaker_tokens = ['[Federico]:', '[Paolo]:', '[Riccardo Santini]:', '[Guglielmone]:']
-    tokenizer.add_special_tokens({'additional_special_tokens': speaker_tokens})
+    special_tokens = ['[Federico]:', '[Paolo]:', '[Riccardo Santini]:', '[Guglielmone]:', '<|system|>', '</|system|>']
+    tokenizer.add_special_tokens({'additional_special_tokens': special_tokens})
 
     # Resize model embeddings to accommodate new tokens
     model.resize_token_embeddings(len(tokenizer))
@@ -294,11 +296,14 @@ if __name__ == "__main__":
     # Add speaker tags as special tokens
     speaker_tokens = ['[Federico]:', '[Paolo]:', '[Riccardo Santini]:', '[Guglielmone]:']
     tokenizer.add_special_tokens({'additional_special_tokens': speaker_tokens})
+
+    chosen_user = args.user if args.user else "Paolo"
+    file_user = chosen_user.lower().replace(" ", "_")
     
     # Determine file paths based on user parameter
     if args.user:
-        train_dataset_path = f"data/processed/train_conversations_{args.user}.json"
-        val_dataset_path = f"data/processed/val_conversations_{args.user}.json"
+        train_dataset_path = f"{drive_path}/data/processed/train_conversations_{file_user}.json"
+        val_dataset_path = f"{drive_path}/data/processed/val_conversations_{file_user}.json"
     else:
         train_dataset_path = "data/processed/train_conversations.json"
         val_dataset_path = "data/processed/val_conversations.json"
