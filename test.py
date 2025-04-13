@@ -36,14 +36,17 @@ def load_fine_tuned_model(model_path, base_model_name):
     
     # Load tokenizer
     tokenizer = AutoTokenizer.from_pretrained(base_model_name)
-    tokenizer.pad_token = tokenizer.eos_token
-
+    
     # Add the same special tokens that were used during training
-    speaker_tokens = ['[Federico]:', '[Paolo]:', '[Riccardo Santini]:', '[Guglielmone]:', '<|system|>', '</|system|>']
-    tokenizer.add_special_tokens({'additional_special_tokens': speaker_tokens})
+    special_tokens = ['[Federico]:', '[Paolo]:', '[Riccardo Santini]:', '[Guglielmone]:']
+    pad_token = '<|pad|>'
+    tokenizer.add_special_tokens({'pad_token': pad_token, 'additional_special_tokens': special_tokens})
+    
+    # Set padding side to match training
+    tokenizer.padding_side = 'right'
 
     # Resize model embeddings to match tokenizer size
-    base_model.resize_token_embeddings(len(tokenizer))
+    base_model.resize_token_embeddings(len(tokenizer), pad_to_multiple_of=8)
     
     # Load the fine-tuned LoRA adapter
     print(f"Loading adapter from: {model_path}")
@@ -63,21 +66,21 @@ def generate_response(model, tokenizer, prompt, max_length=100, temperature=0.7,
         return_tensors="pt",
         padding=True,
         truncation=True,
-        max_length=512,  # Set appropriate max context length
-        return_attention_mask=True  # Explicitly request attention mask
+        max_length=4096,  # Match max_seq_length from training
+        return_attention_mask=True
     ).to(model.device)
     
-    # Now pass both input_ids and attention_mask
+    # Generate with the model
     with torch.no_grad():
         outputs = model.generate(
             input_ids=inputs.input_ids,
-            attention_mask=inputs.attention_mask,  # Pass the attention mask
+            attention_mask=inputs.attention_mask,
             max_new_tokens=max_length,
             temperature=temperature,
             top_p=top_p,
             repetition_penalty=repetition_penalty,
             do_sample=True,
-            pad_token_id=tokenizer.eos_token_id
+            pad_token_id=tokenizer.pad_token_id
         )
     
     # Decode only the newly generated tokens
@@ -103,21 +106,28 @@ def parse_conversation_input(user_input):
     return messages
 
 
-def format_conversation(messages):
-    # Add the instruction at the start
-    conversation = f"<|system|>\nYou are {chosen_user} in a WhatsApp group chat with his friends that switch between English and Italian. Respond naturally in {chosen_user}'s style to the conversation below. The message should take the context into account so that it is coherent and flows naturally with the conversation. When {chosen_user} is mentioned in any of the messages in the conversation, you should pay more attention to that message when replying.</|system|>\n\n"
+def format_conversation(messages, chosen_user):
+    # Format using the chat template to match training
+    system_message = {
+        'role': 'system', 
+        'content': f'You are an assistant that mimics {chosen_user} in a WhatsApp group chat with his friends that switch between English and Italian. Respond naturally in {chosen_user}\'s style to the conversation below. The message should take the context into account so that it is coherent and flows naturally with the conversation. When {chosen_user} is mentioned in any of the messages in the conversation, you should pay more attention to that message when replying.'
+    }
     
-    # Then add the messages
-    for message in messages:
-        conversation += f"[{message['speaker']}]: {message['message']}\n"
+    user_messages = [
+        {'role': 'user', 'content': f"[{message['speaker']}]: {message['message']}"} 
+        for message in messages
+    ]
     
-    # Add the response marker
-    conversation += f"[RESPONSE]:"
+    # Apply the chat template without the assistant's response
+    formatted_conversation = tokenizer.apply_chat_template(
+        [system_message] + user_messages,
+        tokenize=False
+    )
     
-    return conversation.strip()
+    return formatted_conversation
 
 
-def interactive_mode(model, tokenizer):
+def interactive_mode(model, tokenizer, chosen_user):
     print("\n===== Interactive Mode =====")
     print("Type 'exit' to quit")
     print("Format your input as: 'Guglielmone: Message1 | Paolo: Message2 | ...'")
@@ -128,7 +138,7 @@ def interactive_mode(model, tokenizer):
             break
         
         messages = parse_conversation_input(user_input)
-        conversation = format_conversation(messages)
+        conversation = format_conversation(messages, chosen_user)
         
         print("\nFormatted prompt:")
         print(conversation)
@@ -149,7 +159,7 @@ if __name__ == "__main__":
                         help='User name to be used in the prompt.')
     parser.add_argument("--model_path", type=str, default="model/fine-tuned/", 
                         help="Path to the fine-tuned model")
-    parser.add_argument("--base_model", type=str, default="meta-llama/Meta-Llama-3-8B", 
+    parser.add_argument("--base_model", type=str, default="meta-llama/Meta-Llama-3-8B-Instruct", 
                         help="Name of the base model")
     parser.add_argument("--prompt", type=str, 
                         help="Single prompt to test (if not provided, interactive mode will start)")
@@ -174,7 +184,7 @@ if __name__ == "__main__":
         print(f"\nPrompt: {args.prompt}")
 
         messages = parse_conversation_input(args.prompt)
-        formatted_prompt = format_conversation(messages)
+        formatted_prompt = format_conversation(messages, chosen_user)
 
         print(f"\nFormatted prompt: {formatted_prompt}")
         
@@ -190,4 +200,4 @@ if __name__ == "__main__":
         print(f"[{chosen_user}]: {completion}")
     else:
         # Interactive mode
-        interactive_mode(model, tokenizer)
+        interactive_mode(model, tokenizer, chosen_user)
