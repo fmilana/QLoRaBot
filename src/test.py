@@ -11,7 +11,7 @@ from peft import PeftModel
 
 chosen_user = None
 
-def load_fine_tuned_model(model_path, base_model_name):
+def load_fine_tuned_model(model_path, base_model_name, adapter_scale):
     # Free up CUDA memory before starting
     torch.cuda.empty_cache()
     gc.collect()
@@ -55,6 +55,8 @@ def load_fine_tuned_model(model_path, base_model_name):
         model_path,
         device_map="auto",
     )
+
+    model.set_adapter_scale('default', adapter_scale)
     
     return model, tokenizer
 
@@ -121,7 +123,8 @@ def format_conversation(messages, chosen_user):
     # Apply the chat template without the assistant's response
     formatted_conversation = tokenizer.apply_chat_template(
         [system_message] + user_messages,
-        tokenize=False
+        tokenize=False,
+        add_generation_prompt=True
     )
     
     return formatted_conversation
@@ -161,6 +164,8 @@ if __name__ == "__main__":
                         help="Path to the fine-tuned model")
     parser.add_argument("--base_model", type=str, default="meta-llama/Meta-Llama-3-8B-Instruct", 
                         help="Name of the base model")
+    parser.add_argument("--adapter_scale", type=float, default=1.0,
+                        help="Scale for the LoRA adapter")
     parser.add_argument("--prompt", type=str, 
                         help="Single prompt to test (if not provided, interactive mode will start)")
     parser.add_argument("--max_length", type=int, default=100, 
@@ -177,7 +182,7 @@ if __name__ == "__main__":
     chosen_user = args.user if args.user else "Paolo"
     
     # Load the model
-    model, tokenizer = load_fine_tuned_model(args.model_path, args.base_model)
+    model, tokenizer = load_fine_tuned_model(args.model_path, args.base_model, args.adapter_scale)
     
     if args.prompt:
         # Single prompt mode
